@@ -5,7 +5,8 @@ import { Button } from '@/components/ui/button'
 import { refreshFeeds } from '@/app/actions/refresh'
 import { useState, useEffect } from 'react'
 import Link from 'next/link'
-import { Loader2, RefreshCw, Trash2, ArrowLeft } from 'lucide-react'
+import { Input } from '@/components/ui/input'
+import { Loader2, RefreshCw, Trash2, ArrowLeft, Search } from 'lucide-react'
 import { supabase } from '@/lib/supabaseClient'
 import { Card, CardContent } from '@/components/ui/card'
 
@@ -13,8 +14,14 @@ export default function ChannelsPage() {
     const [isRefreshing, setIsRefreshing] = useState(false)
     const [subscriptions, setSubscriptions] = useState<any[]>([])
     const [loadingSubs, setLoadingSubs] = useState(true)
+    const [search, setSearch] = useState('')
+
+    const filteredSubs = subscriptions.filter(sub =>
+        sub.channels?.title?.toLowerCase().includes(search.toLowerCase())
+    )
 
     const fetchSubs = async () => {
+        // ... existing fetchSubs implementation ...
         setLoadingSubs(true)
         const { data: { user } } = await supabase.auth.getUser()
         if (user) {
@@ -91,14 +98,29 @@ export default function ChannelsPage() {
                 </div>
 
                 <div>
-                    <h2 className="text-xl font-semibold mb-4">Your Subscriptions ({subscriptions.length})</h2>
+                    <div className="flex items-center justify-between mb-4">
+                        <h2 className="text-xl font-semibold">Your Subscriptions ({filteredSubs.length})</h2>
+                    </div>
+
+                    <div className="relative mb-4">
+                        <Search className="absolute left-2 top-2.5 h-4 w-4 text-muted-foreground" />
+                        <Input
+                            placeholder="Search subscriptions..."
+                            value={search}
+                            onChange={(e) => setSearch(e.target.value)}
+                            className="pl-8"
+                        />
+                    </div>
+
                     {loadingSubs ? (
                         <div className="text-muted-foreground">Loading...</div>
-                    ) : subscriptions.length === 0 ? (
-                        <p className="text-muted-foreground bg-muted p-4 rounded-lg">You haven't subscribed to any channels yet.</p>
+                    ) : filteredSubs.length === 0 ? (
+                        <p className="text-muted-foreground bg-muted p-4 rounded-lg">
+                            {search ? 'No matching subscriptions.' : "You haven't subscribed to any channels yet."}
+                        </p>
                     ) : (
                         <div className="space-y-3">
-                            {subscriptions.map((sub) => (
+                            {filteredSubs.map((sub) => (
                                 <Card key={sub.id} className="overflow-hidden">
                                     <CardContent className="p-4 flex items-center justify-between">
                                         <div className="flex items-center space-x-3">
