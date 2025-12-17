@@ -60,3 +60,31 @@ create policy "Authenticated users can update channels" on public.channels for u
 -- In a real app we would use Service Role, but for this MVP config we use public policies.
 create policy "Enable insert for all users" on "public"."videos" as PERMISSIVE for INSERT to public with check (true);
 create policy "Enable update for all users" on "public"."videos" as PERMISSIVE for UPDATE to public using (true);
+
+-- 4. Collections Table (User-created folders for saves)
+create table public.collections (
+  id uuid default uuid_generate_v4() primary key,
+  user_id uuid references auth.users not null,
+  name text not null,
+  created_at timestamp with time zone default timezone('utc'::text, now()) not null
+);
+
+-- 5. Saved Lessons Table (The actual bookmarks)
+create table public.saved_lessons (
+  id uuid default uuid_generate_v4() primary key,
+  user_id uuid references auth.users not null,
+  video_id text references public.videos(video_id) on delete cascade not null,
+  collection_id uuid references public.collections(id) on delete set null, -- Optional folder
+  created_at timestamp with time zone default timezone('utc'::text, now()) not null,
+  unique(user_id, video_id) -- Prevent double saving the same video
+);
+
+-- Enable RLS for new tables
+alter table public.collections enable row level security;
+alter table public.saved_lessons enable row level security;
+
+-- Policies for Collections
+create policy "Users can manage own collections" on public.collections for all using (auth.uid() = user_id);
+
+-- Policies for Saved Lessons
+create policy "Users can manage own saved lessons" on public.saved_lessons for all using (auth.uid() = user_id);

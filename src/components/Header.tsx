@@ -4,6 +4,7 @@
 import Link from 'next/link'
 import { Button } from '@/components/ui/button'
 import { BookOpen, Settings, LogIn } from 'lucide-react'
+import { RefreshFeed } from '@/components/RefreshFeed'
 
 export function Header() {
     return (
@@ -15,6 +16,7 @@ export function Header() {
                 </Link>
                 <div className="flex flex-1 items-center justify-between space-x-2 md:justify-end">
                     <nav className="flex items-center space-x-2">
+                        <RefreshFeed />
                         <Link href="/channels">
                             <Button variant="ghost" size="sm">
                                 <Settings className="h-4 w-4 mr-2" />

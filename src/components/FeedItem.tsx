@@ -1,13 +1,14 @@
-
 'use client'
 
 import { useState } from 'react'
 import Link from 'next/link'
+import { useRouter } from 'next/navigation'
 import { Card, CardContent, CardFooter, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
-import { Sparkles, MessageSquare, Play, Loader2 } from "lucide-react"
+import { Sparkles, Loader2, RefreshCw } from "lucide-react"
 import { summarizeVideo } from '@/app/actions/summarize'
+import { SaveButton } from "@/components/SaveButton"
 
 interface FeedItemProps {
     video: any
@@ -16,24 +17,37 @@ interface FeedItemProps {
 export function FeedItem({ video }: FeedItemProps) {
     const [isSummarizing, setIsSummarizing] = useState(false)
     const [summaryData, setSummaryData] = useState(video.summary)
+    const [imgSrc, setImgSrc] = useState(`https://i.ytimg.com/vi/${video.video_id}/maxresdefault.jpg`)
 
     const hasSummary = summaryData && Object.keys(summaryData).length > 0
     const title = hasSummary ? summaryData.teachingTitle : video.title
-    const thumbnailUrl = `https://i.ytimg.com/vi/${video.video_id}/mqdefault.jpg`
 
-    const handleSummarize = async () => {
+    const isFullSummary = hasSummary && (summaryData.detailedSummary || summaryData.mainLesson)
+    const router = useRouter()
+
+    const handleSummarize = async (mode: 'quick' | 'full') => {
         setIsSummarizing(true)
         try {
-            const result = await summarizeVideo(video.video_id)
+            const result = await summarizeVideo(video.video_id, mode)
             if (result.success) {
                 setSummaryData(result.summary)
+                if (mode === 'full') {
+                    // Refresh the feed view so when user comes back, it's updated
+                    router.refresh()
+                    // Navigate to the lesson page immediately
+                    router.push(`/video/${video.video_id}`)
+                    return
+                }
             } else {
                 alert("Failed to summarize: " + result.error)
             }
         } catch (e) {
             console.error(e)
         } finally {
-            setIsSummarizing(false)
+            // Only stop loading if we are NOT navigating away
+            if (mode !== 'full') {
+                setIsSummarizing(false)
+            }
         }
     }
 
@@ -41,7 +55,12 @@ export function FeedItem({ video }: FeedItemProps) {
         <Card className="mb-6 overflow-hidden">
             {/* Cover Image */}
             <div className="relative h-48 w-full bg-muted">
-                <img src={thumbnailUrl} alt={title} className="w-full h-full object-cover" />
+                <img
+                    src={imgSrc}
+                    alt={title}
+                    className="w-full h-full object-cover"
+                    onError={() => setImgSrc(`https://i.ytimg.com/vi/${video.video_id}/hqdefault.jpg`)}
+                />
                 <div className="absolute inset-0 bg-gradient-to-t from-black/60 to-transparent" />
                 <div className="absolute bottom-2 left-4 text-white text-xs font-mono bg-black/50 px-2 py-1 rounded">
                     {new Date(video.published_at).toLocaleDateString()}
@@ -55,8 +74,8 @@ export function FeedItem({ video }: FeedItemProps) {
                     </CardTitle>
                 </div>
                 <div className="flex gap-2 mt-2">
-                    <Badge variant={hasSummary ? "default" : "secondary"}>
-                        {hasSummary ? "Lesson Ready" : "Unprocessed"}
+                    <Badge variant={isFullSummary ? "default" : hasSummary ? "secondary" : "outline"}>
+                        {isFullSummary ? "Lesson Ready" : hasSummary ? "Quick Summary" : "Unprocessed"}
                     </Badge>
                 </div>
             </CardHeader>
@@ -64,14 +83,16 @@ export function FeedItem({ video }: FeedItemProps) {
             <CardContent>
                 {hasSummary ? (
                     <div className="space-y-4">
-                        <ul className="list-disc pl-5 space-y-1 text-muted-foreground">
-                            {summaryData.summaryHighlights?.map((point: string, i: number) => (
-                                <li key={i}>{point}</li>
-                            ))}
-                        </ul>
-                        <p className="text-sm font-medium border-l-4 border-primary pl-3 py-1 bg-muted/50 rounded-r">
-                            💡 Thesis: {summaryData.thesis}
-                        </p>
+                        <div className="text-sm font-medium border-l-4 border-primary pl-3 py-1 bg-muted/50 rounded-r">
+                            💡 {summaryData.coreThesis || summaryData.thesis}
+                        </div>
+                        {(summaryData.quickOverview || summaryData.keyTakeaways || summaryData.summaryHighlights) && (
+                            <ul className="list-disc pl-5 space-y-1 text-muted-foreground">
+                                {(summaryData.quickOverview || summaryData.keyTakeaways || summaryData.summaryHighlights || []).slice(0, 3).map((point: string, i: number) => (
+                                    <li key={i}>{point}</li>
+                                ))}
+                            </ul>
+                        )}
                     </div>
                 ) : (
                     <p className="text-muted-foreground italic">
@@ -80,26 +101,57 @@ export function FeedItem({ video }: FeedItemProps) {
                 )}
             </CardContent>
 
-            <CardFooter className="flex justify-between border-t pt-4 bg-muted/20">
-                {hasSummary ? (
-                    <Link href={`/video/${video.video_id}`} className="w-full">
-                        <Button variant="default" className="w-full">
-                            <BookOpenTextIcon className="mr-2 h-4 w-4" /> View Full Lesson
-                        </Button>
-                    </Link>
-                ) : (
-                    <Button
-                        onClick={handleSummarize}
-                        disabled={isSummarizing}
-                        className="w-full bg-indigo-600 hover:bg-indigo-700 text-white"
-                    >
-                        {isSummarizing ? (
-                            <><Loader2 className="mr-2 h-4 w-4 animate-spin" /> Teaching...</>
-                        ) : (
-                            <><Sparkles className="mr-2 h-4 w-4" /> Teach Me This (AI)</>
-                        )}
-                    </Button>
-                )}
+            <CardFooter className="flex items-center gap-2 border-t pt-4 bg-muted/20">
+                <div className="flex-1 flex flex-col sm:flex-row gap-2">
+                    {isFullSummary ? (
+                        <>
+                            <Link href={`/video/${video.video_id}`} className="flex-1 w-full">
+                                <Button variant="default" className="w-full">
+                                    <BookOpenTextIcon className="mr-2 h-4 w-4" /> View Detailed Lesson
+                                </Button>
+                            </Link>
+                            <Button variant="ghost" size="icon" onClick={() => handleSummarize('full')} disabled={isSummarizing} title="Regenerate">
+                                {isSummarizing ? <Loader2 className="animate-spin h-4 w-4" /> : <RefreshCw className="h-4 w-4" />}
+                            </Button>
+                        </>
+                    ) : hasSummary ? (
+                        /* Partial / Quick Summary View */
+                        <div className="w-full flex gap-2">
+                            {/* User has Quick Summary, provide Update path */}
+                            <Button
+                                onClick={() => handleSummarize('full')}
+                                disabled={isSummarizing}
+                                variant="default"
+                                className="w-full bg-gradient-to-r from-indigo-500 to-purple-600 hover:from-indigo-600 hover:to-purple-700 text-white border-0"
+                            >
+                                {isSummarizing ? <Loader2 className="animate-spin mr-2 h-4 w-4" /> : <Sparkles className="mr-2 h-4 w-4" />}
+                                Detailed Lesson
+                            </Button>
+                        </div>
+                    ) : (
+                        /* No Summary - Show Dual Options */
+                        <div className="grid grid-cols-2 gap-3 w-full">
+                            <Button
+                                onClick={() => handleSummarize('quick')}
+                                disabled={isSummarizing}
+                                variant="secondary"
+                                className="w-full"
+                            >
+                                {isSummarizing ? <Loader2 className="animate-spin mr-2 h-4 w-4" /> : "⚡ Quick Overview"}
+                            </Button>
+                            <Button
+                                onClick={() => handleSummarize('full')}
+                                disabled={isSummarizing}
+                                className="w-full"
+                            >
+                                {isSummarizing ? <Loader2 className="animate-spin mr-2 h-4 w-4" /> : "🎓 Detailed Lesson"}
+                            </Button>
+                        </div>
+                    )}
+                </div>
+                <div className="shrink-0">
+                    <SaveButton videoId={video.video_id} />
+                </div>
             </CardFooter>
         </Card>
     )
