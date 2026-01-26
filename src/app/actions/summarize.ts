@@ -2,7 +2,7 @@
 'use server'
 
 import { createClient } from '@supabase/supabase-js'
-import { YoutubeTranscript } from 'youtube-transcript'
+import { TranscriptFetcher } from '@/lib/transcript'
 import { generateVideoSummary } from '@/lib/openai'
 import { revalidatePath } from 'next/cache'
 
@@ -25,7 +25,7 @@ export async function summarizeVideo(videoId: string, mode: 'quick' | 'full' = '
         let transcriptText = video.transcript
         if (!transcriptText) {
             try {
-                const transcriptItems = await YoutubeTranscript.fetchTranscript(videoId)
+                const transcriptItems = await TranscriptFetcher.fetchTranscript(videoId)
 
                 // Format with timestamps: [MM:SS] Text
                 transcriptText = transcriptItems.map(item => {
@@ -41,10 +41,9 @@ export async function summarizeVideo(videoId: string, mode: 'quick' | 'full' = '
                     .update({ transcript: transcriptText })
                     .eq('video_id', videoId)
 
-            } catch (err) {
-                console.error("Transcript Error:", err)
-                // Check if disabled/unavailable
-                throw new Error('Could not retrieve transcript. Video may not have captions.')
+            } catch (err: any) {
+                console.error("Transcript Error FULL:", JSON.stringify(err, Object.getOwnPropertyNames(err)));
+                throw new Error(`TRANSCRIPT_FAILED: ${err.message}`)
             }
         }
 
