@@ -1,6 +1,5 @@
 import { Innertube, UniversalCache } from 'youtubei.js';
 import { YoutubeTranscript } from 'youtube-transcript';
-const youtubedl = require('youtube-dl-exec');
 
 export interface TranscriptItem {
     text: string;
@@ -27,9 +26,9 @@ export class TranscriptFetcher {
     static async fetchTranscript(videoId: string): Promise<TranscriptItem[]> {
         const errors: string[] = [];
 
-        // 1. Try yt-dlp (Binary Wrapper - Gold Standard)
+        // 1. Try yt-dlp (via Python Proxy on Vercel, or local binary)
         try {
-            console.log(`[Transcript] Attempting yt-dlp for ${videoId}`);
+            console.log(`[Transcript] Attempting yt-dlp/Proxy for ${videoId}`);
             return await this.fetchWithYtDlp(videoId);
         } catch (ytDlpError) {
             const msg = ytDlpError instanceof Error ? ytDlpError.message : String(ytDlpError);
@@ -182,47 +181,51 @@ export class TranscriptFetcher {
     }
 
     private static async fetchWithYtDlp(videoId: string): Promise<TranscriptItem[]> {
-        // Use dumpSingleJson as it proved reliable for metadata
-        let info;
+        // If on Vercel (or any environment with our /api/transcript available), use the proxy
+        // Since we are in a server action, referencing absolute URL is best
+        // VERCEL_URL is available in production
+        const baseUrl = process.env.VERCEL_URL
+            ? `https://${process.env.VERCEL_URL}`
+            : 'http://localhost:3000';
+
         try {
-            info = await youtubedl(`https://www.youtube.com/watch?v=${videoId}`, {
-                dumpSingleJson: true,
-                noWarnings: true,
-                noCheckCertificates: true,
-                preferFreeFormats: true
-            });
-        } catch (ytErr: any) {
-            console.error('[Transcript] yt-dlp binary failure:', JSON.stringify(ytErr, Object.getOwnPropertyNames(ytErr)));
-            throw new Error(`YT_DLP_EXEC_FAILED: ${ytErr.message || 'Unknown error'}`);
+            console.log(`[Transcript] Fetching from proxy: ${baseUrl}/api/transcript?v=${videoId}`);
+            const apiRes = await fetch(`${baseUrl}/api/transcript?v=${videoId}`);
+
+            if (!apiRes.ok) {
+                const errData = await apiRes.json().catch(() => ({}));
+                throw new Error(errData.error || `Proxy failed: ${apiRes.status}`);
+            }
+
+            const { url, ext } = await apiRes.json();
+            console.log(`[Transcript] Proxy returned ${ext} URL: ${url}`);
+
+            const subRes = await fetch(url);
+            if (!subRes.ok) throw new Error(`Failed to fetch subtitle from Google: ${subRes.status}`);
+
+            const text = await subRes.text();
+            return ext === 'json3' ? this.parseJsonTranscript(text) : this.parseVtt(text);
+
+        } catch (proxyErr: any) {
+            // If local and proxy fails, we could try the binary directly as a mega-fallback
+            // but for production, this should be the primary path.
+            if (process.env.NODE_ENV === 'development') {
+                console.log('[Transcript] Proxy failed in dev, attempting local binary fallback...');
+                const youtubedl = require('youtube-dl-exec');
+                const info = await youtubedl(`https://www.youtube.com/watch?v=${videoId}`, {
+                    dumpSingleJson: true,
+                    noWarnings: true,
+                    noCheckCertificates: true,
+                    preferFreeFormats: true
+                });
+                const subtitles = info.automatic_captions || info.subtitles;
+                const enSubs = subtitles['en'] || subtitles['en-orig'] || subtitles['en-US'];
+                const subTrack = enSubs.find((s: any) => s.ext === 'json3') || enSubs[0];
+                const subRes = await fetch(subTrack.url);
+                const text = await subRes.text();
+                return subTrack.ext === 'json3' ? this.parseJsonTranscript(text) : this.parseVtt(text);
+            }
+            throw proxyErr;
         }
-
-        const subtitles = info.automatic_captions || info.subtitles;
-        if (!subtitles) throw new Error('No subtitles found in yt-dlp metadata');
-
-        const enSubs = subtitles['en'] || subtitles['en-orig'] || subtitles['en-US'];
-        if (!enSubs) throw new Error('No English subtitles found in yt-dlp metadata');
-
-        // Prefer json3 > vtt
-        const subTrack = enSubs.find((s: any) => s.ext === 'json3')
-            || enSubs.find((s: any) => s.ext === 'vtt')
-            || enSubs[0];
-
-        if (!subTrack || !subTrack.url) throw new Error('No subtitle URL found');
-
-        console.log(`[Transcript] Fetching ${subTrack.ext} from: ${subTrack.url}`);
-        const response = await fetch(subTrack.url);
-        if (!response.ok) throw new Error(`Failed to fetch subtitle content: ${response.status}`);
-
-        const text = await response.text();
-
-        if (subTrack.ext === 'json3') {
-            return this.parseJsonTranscript(text);
-        }
-
-        if (text.startsWith('#EXTM3U')) {
-            throw new Error('GOT_HLS_PLAYLIST - HLS parsing not implemented');
-        }
-
-        return this.parseVtt(text);
     }
 }

@@ -1,3 +1,0 @@
-{
-    "installCommand": "yum install -y python3 && npm install"
-}
