@@ -28,17 +28,18 @@ export class TranscriptFetcher {
 
         // 1. Try yt-dlp (via Python Proxy on Vercel, or local binary)
         try {
-            console.log(`[Transcript] Attempting yt-dlp/Proxy for ${videoId}`);
-            return await this.fetchWithYtDlp(videoId);
-        } catch (ytDlpError) {
-            const msg = ytDlpError instanceof Error ? ytDlpError.message : String(ytDlpError);
-            console.warn(`[Transcript] yt-dlp failed: ${msg}`);
-            errors.push(`yt-dlp: ${msg}`);
+            console.log(`[Transcript] MODE 1: Proxy/yt-dlp for ${videoId}`);
+            const result = await this.fetchWithYtDlp(videoId);
+            console.log(`[Transcript] MODE 1 SUCCESS: ${result.length} items`);
+            return result;
+        } catch (ytDlpError: any) {
+            console.warn(`[Transcript] MODE 1 FAILED: ${ytDlpError.message}`);
+            errors.push(`yt-dlp: ${ytDlpError.message}`);
         }
 
         // 2. Try Innertube (WEB Client - often better for transcripts)
         try {
-            console.log(`[Transcript] Attempting Innertube (WEB) for ${videoId}`);
+            console.log(`[Transcript] MODE 2: Innertube for ${videoId}`);
             const youtube = await Innertube.create({
                 cache: new UniversalCache(false),
                 generate_session_locally: true
@@ -53,6 +54,7 @@ export class TranscriptFetcher {
 
             // @ts-ignore - Innertube types can be tricky
             const segments = transcriptData.transcript.content?.body?.initial_segments || [];
+            console.log(`[Transcript] MODE 2 SUCCESS: ${segments.length} items`);
 
             return segments.map((seg: any) => ({
                 text: seg.snippet.text,
@@ -60,46 +62,46 @@ export class TranscriptFetcher {
                 duration: Number(seg.end_ms) - Number(seg.start_ms)
             }));
 
-        } catch (innerError) {
-            const msg = innerError instanceof Error ? innerError.message : String(innerError);
-            console.warn(`[Transcript] Innertube failed: ${msg}`);
-            errors.push(`Innertube: ${msg}`);
+        } catch (innerError: any) {
+            console.warn(`[Transcript] MODE 2 FAILED: ${innerError.message}`);
+            errors.push(`Innertube: ${innerError.message}`);
         }
 
         // 3. Try youtube-transcript (Scraper - Robust)
         try {
-            console.log(`[Transcript] Attempting youtube-transcript for ${videoId}`);
+            console.log(`[Transcript] MODE 3: youtube-transcript for ${videoId}`);
             const transcript = await YoutubeTranscript.fetchTranscript(videoId);
 
             if (transcript && transcript.length > 0) {
+                console.log(`[Transcript] MODE 3 SUCCESS: Found ${transcript.length} items`);
                 return transcript.map(item => ({
                     text: item.text,
                     offset: item.offset,
                     duration: item.duration
                 }));
             }
-        } catch (ytError) {
-            const msg = ytError instanceof Error ? ytError.message : String(ytError);
-            console.warn(`[Transcript] youtube-transcript failed: ${msg}`);
-            errors.push(`youtube-transcript: ${msg}`);
+            throw new Error('youtube-transcript returned empty');
+        } catch (ytError: any) {
+            console.warn(`[Transcript] MODE 3 FAILED: ${ytError.message}`);
+            errors.push(`youtube-transcript: ${ytError.message}`);
         }
 
-        // 4. Try Fallbacks (Invidious) - Shuffle instances
+        // 4. Try Fallbacks (Invidious)
         const shuffled = [...INVIDIOUS_INSTANCES].sort(() => 0.5 - Math.random());
+        console.log(`[Transcript] MODE 4: Invidious (Trying ${shuffled.length} nodes)`);
 
         for (const instance of shuffled) {
             try {
-                console.log(`[Transcript] Trying fallback: ${instance}`);
-                return await this.fetchInvidious(videoId, instance);
-            } catch (invError) {
-                const invMsg = invError instanceof Error ? invError.message : String(invError);
-                console.warn(`[Transcript] Fallback ${instance} failed: ${invMsg}`);
-                errors.push(`${instance.replace('https://', '')}: ${invMsg}`);
+                const result = await this.fetchInvidious(videoId, instance);
+                console.log(`[Transcript] MODE 4 SUCCESS via ${instance}`);
+                return result;
+            } catch (invError: any) {
+                errors.push(`${instance.replace('https://', '')}: ${invError.message}`);
                 continue;
             }
         }
 
-        throw new Error(`ALL_METHODS_FAILED_V3. Log: ${errors.join(' | ')}`);
+        throw new Error(`ALL_METHODS_FAILED: ${errors.join(' | ')}`);
     }
 
     private static async fetchInvidious(videoId: string, baseUrl: string): Promise<TranscriptItem[]> {
