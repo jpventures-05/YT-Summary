@@ -181,49 +181,58 @@ export class TranscriptFetcher {
     }
 
     private static async fetchWithYtDlp(videoId: string): Promise<TranscriptItem[]> {
-        // If on Vercel (or any environment with our /api/transcript available), use the proxy
-        // Since we are in a server action, referencing absolute URL is best
-        // VERCEL_URL is available in production
-        const baseUrl = process.env.VERCEL_URL
-            ? `https://${process.env.VERCEL_URL}`
-            : 'http://localhost:3000';
+        const host = process.env.VERCEL_URL || 'localhost:3000';
+        const protocol = host.includes('localhost') ? 'http' : 'https';
+        const baseUrl = `${protocol}://${host}`;
 
         try {
-            console.log(`[Transcript] Fetching from proxy: ${baseUrl}/api/transcript?v=${videoId}`);
-            const apiRes = await fetch(`${baseUrl}/api/transcript?v=${videoId}`);
+            console.log(`[Transcript] Calling Proxy: ${baseUrl}/api/transcript?v=${videoId}`);
+            const apiRes = await fetch(`${baseUrl}/api/transcript?v=${videoId}`, {
+                cache: 'no-store'
+            });
 
             if (!apiRes.ok) {
-                const errData = await apiRes.json().catch(() => ({}));
-                throw new Error(errData.error || `Proxy failed: ${apiRes.status}`);
+                const text = await apiRes.text().catch(() => 'No body');
+                console.error(`[Transcript] Proxy Error Status: ${apiRes.status}`);
+                console.error(`[Transcript] Proxy Error Body: ${text.substring(0, 200)}`);
+                throw new Error(`Proxy failed: ${apiRes.status}`);
             }
 
-            const { url, ext } = await apiRes.json();
-            console.log(`[Transcript] Proxy returned ${ext} URL: ${url}`);
+            const data = await apiRes.json();
+            if (data.error) throw new Error(data.error);
 
+            const { url, ext } = data;
+            if (!url) throw new Error('No URL in proxy response');
+
+            console.log(`[Transcript] Proxy success, fetching ${ext} from Google...`);
             const subRes = await fetch(url);
-            if (!subRes.ok) throw new Error(`Failed to fetch subtitle from Google: ${subRes.status}`);
+            if (!subRes.ok) throw new Error(`Google fetch failed: ${subRes.status}`);
 
             const text = await subRes.text();
             return ext === 'json3' ? this.parseJsonTranscript(text) : this.parseVtt(text);
 
         } catch (proxyErr: any) {
-            // If local and proxy fails, we could try the binary directly as a mega-fallback
-            // but for production, this should be the primary path.
+            console.warn(`[Transcript] yt-dlp/Proxy failed: ${proxyErr.message}`);
+
             if (process.env.NODE_ENV === 'development') {
-                console.log('[Transcript] Proxy failed in dev, attempting local binary fallback...');
-                const youtubedl = require('youtube-dl-exec');
-                const info = await youtubedl(`https://www.youtube.com/watch?v=${videoId}`, {
-                    dumpSingleJson: true,
-                    noWarnings: true,
-                    noCheckCertificates: true,
-                    preferFreeFormats: true
-                });
-                const subtitles = info.automatic_captions || info.subtitles;
-                const enSubs = subtitles['en'] || subtitles['en-orig'] || subtitles['en-US'];
-                const subTrack = enSubs.find((s: any) => s.ext === 'json3') || enSubs[0];
-                const subRes = await fetch(subTrack.url);
-                const text = await subRes.text();
-                return subTrack.ext === 'json3' ? this.parseJsonTranscript(text) : this.parseVtt(text);
+                console.log('[Transcript] Dev fallback to local binary...');
+                try {
+                    const youtubedl = require('youtube-dl-exec');
+                    const info = await youtubedl(`https://www.youtube.com/watch?v=${videoId}`, {
+                        dumpSingleJson: true,
+                        noWarnings: true,
+                        noCheckCertificates: true,
+                        preferFreeFormats: true
+                    });
+                    const subtitles = info.automatic_captions || info.subtitles;
+                    const enSubs = subtitles['en'] || subtitles['en-orig'] || subtitles['en-US'];
+                    const subTrack = enSubs.find((s: any) => s.ext === 'json3') || enSubs[0];
+                    const subRes = await fetch(subTrack.url);
+                    const text = await subRes.text();
+                    return subTrack.ext === 'json3' ? this.parseJsonTranscript(text) : this.parseVtt(text);
+                } catch (binErr: any) {
+                    console.error('[Transcript] Local binary failed:', binErr.message);
+                }
             }
             throw proxyErr;
         }
