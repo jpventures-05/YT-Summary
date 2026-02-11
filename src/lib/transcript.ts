@@ -8,19 +8,25 @@ export interface TranscriptItem {
 }
 
 const INVIDIOUS_INSTANCES = [
+    'https://inv.nadeko.net',
+    'https://yewtu.be',
+    'https://invidious.nerdvpn.de',
     'https://inv.tux.pizza',
     'https://vid.puffyan.us',
-    'https://invidious.kavin.rocks',
-    'https://yt.artemislena.eu',
+    'https://iv.ggtyler.dev',
+    'https://inv.pistasjis.net',
     'https://invidious.flokinet.to',
-    'https://inv.bp.projectsegfau.lt',
-    'https://yewtu.be',
     'https://invidious.privacydev.net',
     'https://invidious.drgns.space',
     'https://youtube.076.ne.jp',
-    'https://invidious.jing.rocks',
-    'https://invidious.nerdvpn.de'
+    'https://invidious.jing.rocks'
 ];
+
+const COMMON_HEADERS = {
+    'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+    'Accept-Language': 'en-US,en;q=0.9',
+    'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8',
+};
 
 export class TranscriptFetcher {
     static async fetchTranscript(videoId: string): Promise<TranscriptItem[]> {
@@ -106,6 +112,7 @@ export class TranscriptFetcher {
 
     private static async fetchInvidious(videoId: string, baseUrl: string): Promise<TranscriptItem[]> {
         const response = await fetch(`${baseUrl}/api/v1/videos/${videoId}`, {
+            headers: COMMON_HEADERS,
             signal: AbortSignal.timeout(8000)
         });
 
@@ -119,7 +126,7 @@ export class TranscriptFetcher {
 
         const captionUrl = track.url.startsWith('http') ? track.url : `${baseUrl}${track.url}`;
 
-        const subResponse = await fetch(captionUrl);
+        const subResponse = await fetch(captionUrl, { headers: COMMON_HEADERS });
         const subText = await subResponse.text();
         return this.parseVtt(subText);
     }
@@ -207,7 +214,7 @@ export class TranscriptFetcher {
             if (!url) throw new Error('No URL in proxy response');
 
             console.log(`[Transcript] Proxy success, fetching ${ext} from Google...`);
-            const subRes = await fetch(url);
+            const subRes = await fetch(url, { headers: COMMON_HEADERS });
             if (!subRes.ok) throw new Error(`Google fetch failed: ${subRes.status}`);
 
             const text = await subRes.text();
