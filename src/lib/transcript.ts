@@ -190,9 +190,10 @@ export class TranscriptFetcher {
     }
 
     private static async fetchWithYtDlp(videoId: string): Promise<TranscriptItem[]> {
-        const host = process.env.VERCEL_URL || 'localhost:3000';
-        const protocol = host.includes('localhost') ? 'http' : 'https';
-        const baseUrl = `${protocol}://${host}`;
+        // VERCEL_URL doesn't include protocol, and might be missing in some environments
+        const host = process.env.NEXT_PUBLIC_VERCEL_URL || process.env.VERCEL_URL || 'localhost:3000';
+        const protocol = (host.includes('localhost') || host.includes('127.0.0.1')) ? 'http' : 'https';
+        const baseUrl = host.startsWith('http') ? host : `${protocol}://${host}`;
 
         try {
             console.log(`[Transcript] Calling Proxy: ${baseUrl}/api/transcript?v=${videoId}`);
@@ -208,10 +209,16 @@ export class TranscriptFetcher {
             }
 
             const data = await apiRes.json();
-            if (data.error) throw new Error(data.error);
+            if (data.error) {
+                console.error(`[Transcript] Proxy returned error: ${data.error}`);
+                throw new Error(data.error);
+            }
 
             const { url, ext } = data;
-            if (!url) throw new Error('No URL in proxy response');
+            if (!url) {
+                console.error(`[Transcript] No URL in proxy response: ${JSON.stringify(data)}`);
+                throw new Error('No URL in proxy response');
+            }
 
             console.log(`[Transcript] Proxy success, fetching ${ext} from Google...`);
             const subRes = await fetch(url, { headers: COMMON_HEADERS });

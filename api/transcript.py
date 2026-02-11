@@ -27,10 +27,21 @@ def handler(request):
             info = ydl.extract_info(f"https://www.youtube.com/watch?v={video_id}", download=False)
             
             subtitles = info.get('automatic_captions', {}) or info.get('subtitles', {})
-            en_subs = subtitles.get('en') or subtitles.get('en-orig') or subtitles.get('en-US')
+            
+            # Find any English-related key
+            en_keys = [k for k in subtitles.keys() if k.startswith('en')]
+            en_subs = None
+            for key in en_keys:
+                en_subs = subtitles.get(key)
+                if en_subs:
+                    break
             
             if not en_subs:
-                 raise Exception("No English subtitles found")
+                 # Fallback to any available if no English
+                 if subtitles:
+                     en_subs = next(iter(subtitles.values()))
+                 else:
+                     raise Exception("No subtitles found at all")
 
             # Prefer json3
             sub_track = next((s for s in en_subs if s.get('ext') == 'json3'), en_subs[0])
