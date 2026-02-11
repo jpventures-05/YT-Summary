@@ -3,6 +3,7 @@ import yt_dlp
 from urllib.parse import parse_qs, urlparse
 
 def handler(request):
+    print(f"--- Transcript Request Started: {request.path} ---")
     query = parse_qs(urlparse(request.path).query)
     video_id = query.get('v', [None])[0]
 
