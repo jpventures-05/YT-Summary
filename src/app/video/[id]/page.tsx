@@ -60,6 +60,18 @@ export default async function LessonPage(props: { params: Promise<{ id: string }
                             <Badge variant="outline" className="mb-3">AI Lesson</Badge>
                             <h1 className="text-3xl font-extrabold tracking-tight lg:text-4xl mb-3">{s.teachingTitle || video.title}</h1>
                             <p className="text-muted-foreground text-lg italic">{s.coreThesis || s.thesis}</p>
+
+                            {/* Force Summarize Button for Debugging */}
+                            <div className="mt-4 flex gap-2">
+                                <Button variant="secondary" size="sm" onClick={async () => {
+                                    const { summarizeVideo } = await import('@/app/actions/summarize');
+                                    const res = await summarizeVideo(video.video_id, 'full');
+                                    alert(res.success ? "Success!" : "Error: " + res.error);
+                                    window.location.reload();
+                                }}>
+                                    (Debug) Force Summarize
+                                </Button>
+                            </div>
                         </div>
                         <div className="shrink-0 pt-1">
                             <SaveButton videoId={video.video_id} />
