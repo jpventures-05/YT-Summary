@@ -1,5 +1,5 @@
-
-import { createClient } from '@supabase/supabase-js'
+'use client'
+import { useState, useEffect } from 'react'
 import { Header } from "@/components/Header"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
@@ -13,25 +13,57 @@ import { SaveButton } from "@/components/SaveButton"
 // Force dynamic because we want fresh data
 export const dynamic = 'force-dynamic'
 
-export default async function LessonPage(props: { params: Promise<{ id: string }> }) {
-    const params = await props.params
-    const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!
-    const supabaseKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
-    const supabase = createClient(supabaseUrl, supabaseKey)
+import { createClient } from '@supabase/supabase-js'
 
-    const { data: video, error } = await supabase
-        .from('videos')
-        .select('*')
-        .eq('video_id', params.id)
-        .single()
+export default function LessonPage({ params }: { params: any }) {
+    const [id, setId] = useState<string | null>(null)
+    const [video, setVideo] = useState<any>(null)
+    const [loading, setLoading] = useState(true)
 
-    if (error || !video || !video.summary) {
+    useEffect(() => {
+        params.then((p: any) => setId(p.id))
+    }, [params])
+
+    useEffect(() => {
+        if (!id) return
+        const fetchVideo = async () => {
+            const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!
+            const supabaseKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
+            const supabase = createClient(supabaseUrl, supabaseKey)
+
+            const { data, error } = await supabase
+                .from('videos')
+                .select('*')
+                .eq('video_id', id)
+                .single()
+
+            if (data) setVideo(data)
+            setLoading(false)
+        }
+        fetchVideo()
+    }, [id])
+
+    if (loading) return <div className="p-10 text-center">Loading lesson...</div>
+
+    if (!video || !video.summary) {
         return (
             <div className="container py-8">
                 <Header />
                 <div className="mt-8 text-center">
                     <h1 className="text-xl mb-4">Lesson not found or not yet processed.</h1>
                     <p className="mb-4 text-muted-foreground">If you just added this, give the AI a moment to think!</p>
+                    {id && (
+                        <div className="mb-4">
+                            <Button variant="secondary" onClick={async () => {
+                                const { summarizeVideo } = await import('@/app/actions/summarize');
+                                const res = await summarizeVideo(id, 'full');
+                                alert(res.success ? "Success!" : "Error: " + res.error);
+                                window.location.reload();
+                            }}>
+                                (Debug) Force Summarize
+                            </Button>
+                        </div>
+                    )}
                     <Link href="/"><Button variant="outline">Back to Feed</Button></Link>
                 </div>
             </div>
@@ -40,10 +72,10 @@ export default async function LessonPage(props: { params: Promise<{ id: string }
 
     const s = video.summary as any
 
-    // Helper to render MD
-    const renderMarkdown = async (text: string) => {
-        if (!text) return ''
-        return await marked.parse(text)
+    // Helper to render MD (now inline in the component)
+    const renderMarkdown = (text: string) => {
+        if (!text) return { __html: '' }
+        return { __html: marked.parse(text) }
     }
 
     return (
@@ -88,7 +120,7 @@ export default async function LessonPage(props: { params: Promise<{ id: string }
                                     <div className="h-8 w-1 bg-primary rounded-full"></div>
                                     <h2 className="text-2xl font-bold m-0">Detailed Analysis</h2>
                                 </div>
-                                <div className="markdown-content text-lg leading-relaxed space-y-4" dangerouslySetInnerHTML={{ __html: await renderMarkdown(s.detailedSummary) }} />
+                                <div className="markdown-content text-lg leading-relaxed space-y-4" dangerouslySetInnerHTML={renderMarkdown(s.detailedSummary)} />
                             </section>
                         )}
 
@@ -105,14 +137,14 @@ export default async function LessonPage(props: { params: Promise<{ id: string }
                         {/* Main Lesson */}
                         <section className="bg-muted/30 p-6 rounded-xl border">
                             <h2 className="text-xl font-bold mb-4 mt-0">🎓 Main Lesson</h2>
-                            <div className="markdown-content" dangerouslySetInnerHTML={{ __html: await renderMarkdown(s.mainLesson || s.conceptDeepDive || '') }} />
+                            <div className="markdown-content" dangerouslySetInnerHTML={renderMarkdown(s.mainLesson || s.conceptDeepDive || '')} />
                         </section>
 
                         {/* Frameworks */}
                         {s.frameworks && (
                             <section>
                                 <h2 className="text-xl font-bold mb-4">🧩 Frameworks & Models</h2>
-                                <div className="markdown-content" dangerouslySetInnerHTML={{ __html: await renderMarkdown(s.frameworks) }} />
+                                <div className="markdown-content" dangerouslySetInnerHTML={renderMarkdown(s.frameworks)} />
                             </section>
                         )}
 
@@ -120,7 +152,7 @@ export default async function LessonPage(props: { params: Promise<{ id: string }
                         {s.practicalApplication && (
                             <section className="bg-green-50 dark:bg-green-950/20 p-6 rounded-xl border border-green-100 dark:border-green-900">
                                 <h2 className="text-xl font-bold text-green-900 dark:text-green-100 mt-0 mb-4">🚀 Practical Application</h2>
-                                <div className="markdown-content text-green-800 dark:text-green-200" dangerouslySetInnerHTML={{ __html: await renderMarkdown(s.practicalApplication) }} />
+                                <div className="markdown-content text-green-800 dark:text-green-200" dangerouslySetInnerHTML={renderMarkdown(s.practicalApplication)} />
                             </section>
                         )}
 
